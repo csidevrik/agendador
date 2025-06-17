@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  backend:
+    image: golang:1.21
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: go run .
+    expose:
+      - "8000"
+    networks:
+      - appnet
+
+  gateway:
+    image: golang:1.21
+    working_dir: /app
+    volumes:
+      - ./gateway:/app
+    command: sh -c "sed -i 's|http://localhost:8000|http://backend:8000|' main.go && go run ."
+    expose:
+      - "8080"
+    depends_on:
+      - backend
+    networks:
+      - appnet
+
+  ldapservice:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./ldapservice:/app
+    command: python ldap_service.py
+    environment:
+      LDAP_SERVER: ${LDAP_SERVER:-ldap://ldap}
+      LDAP_USER: ${LDAP_USER:-admin}
+      LDAP_PASSWORD: ${LDAP_PASSWORD:-password}
+      LDAP_BASE_DN: ${LDAP_BASE_DN:-""}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: agendador
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    depends_on:
+      - postgres
+    networks:
+      - appnet
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agendador
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - appnet
+
+  frontend:
+    image: nginx:alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - gateway
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  pgdata:
